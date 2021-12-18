@@ -837,7 +837,8 @@ const levelers = [
     1,  2,  3,  4,  5,  6,  7,  8,  9,  10,
     11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
     21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
-    31, 32, 33, 34, 35, 36, 38, 40, 42, 44,
+    32, 34, 36, 38, 40, 42, 44, 46, 48, 50,
+    52, 54, 56, 58, 60,
 ];
 class Skill {
     constructor(inital = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]) { // Just skill stuff. 
@@ -964,7 +965,7 @@ class Skill {
                 this.deduction += this.levelScore;
                 this.level += 1;
                 this.points += this.levelPoints;
-                if (this.level == c.TIER_1 || this.level == c.TIER_2 || this.level == c.TIER_3) {
+                if (this.level == c.TIER_1 || this.level == c.TIER_2 || this.level == c.TIER_3 || this.level == c.TIER_4) {
                     this.canUpgrade = true;
                 }
                 this.update();
@@ -1451,10 +1452,26 @@ var bringToLife = (() => {
         }
         // Invisibility
         if (my.invisible[1]) {
-          my.alpha = Math.max(0, my.alpha - my.invisible[1])
-          if (!my.velocity.isShorterThan(0.1) || my.damageReceived)
-            my.alpha = Math.min(1, my.alpha + my.invisible[0])
-        }
+            if (my.invisible[2] <= my.alpha && my.alpha >= 0) {
+                my.alpha = Math.max(0.01, my.alpha - my.invisible[1]);
+            }
+            if (my.invisible[0] != 3) {
+                if (!(my.velocity.x * my.velocity.x + my.velocity.y * my.velocity.y < 0.15 * 0.15) || my.damageRecieved)
+                    my.alpha = Math.min(1, my.alpha + my.invisible[0]);
+            } else {
+                if (my.hit == 1) {
+                    my.alpha = 1
+                } else {
+                    if (my.invisible[2] <= my.alpha && my.alpha >= 0) {
+                        my.alpha = Math.max(0.01, my.alpha - my.invisible[1])
+                    }
+                }
+            }
+            if (my.invisible[0] == 2) {
+                my.alpha = my.invisible[2]
+            }
+        };
+        my.hit = 0
         // So we start with my master's thoughts and then we filter them down through our control stack
         my.controllers.forEach(AI => {
             let a = AI.think(b);
@@ -1629,7 +1646,8 @@ class Entity {
         this.collisionArray = [];
         this.invuln = false;
         this.alpha = 1;
-        this.invisible = [0, 0];
+        this.hit = 0;
+        this.invisible = [0, 0, 0];
         // Get a new unique id
         this.id = entitiesIdLog++;
         this.team = this.id;
@@ -1762,6 +1780,9 @@ class Entity {
         if (set.PERSISTS_AFTER_DEATH != null) { 
             this.settings.persistsAfterDeath = set.PERSISTS_AFTER_DEATH; 
         }
+        if (set.FRAG != null) { //Normal Frag
+            this.settings.frag = set.FRAG;
+        }
         if (set.CLEAR_ON_MASTER_UPGRADE != null) { 
             this.settings.clearOnMasterUpgrade = set.CLEAR_ON_MASTER_UPGRADE; 
         }
@@ -1839,6 +1860,11 @@ class Entity {
         if (set.UPGRADES_TIER_3 != null) { 
             set.UPGRADES_TIER_3.forEach((e) => {
                 this.upgrades.push({ class: e, tier: 3, level: c.TIER_3, index: e.index });
+            });
+        }
+        if (set.UPGRADES_TIER_4 != null) { 
+            set.UPGRADES_TIER_4.forEach((e) => {
+                this.upgrades.push({ class: e, tier: 4, level: c.TIER_4, index: e.index });
             });
         }
         if (set.SIZE != null) {
@@ -2344,7 +2370,7 @@ class Entity {
             // If I'm a tank, call me a nameless player
             let name = (this.master.name == '') ?
                 (this.master.type === 'tank') ?
-                    "a nameless player's " + this.label :
+                    "an unammed " + this.label :
                     (this.master.type === 'miniboss') ?
                         "a visiting " + this.label :
                         util.addArticle(this.label) 
@@ -2399,7 +2425,7 @@ class Entity {
             });
             // Prepare it and clear the collision array.
             killText = killText.slice(0, -5);
-            if (killText === 'You have been kille') killText = 'You have died a stupid death';
+            if (killText === 'You have been killed') killText = 'You have died a stupid death';
             this.sendMessage(killText + '.');
             // If I'm the leader, broadcast it:
             if (this.id === room.topPlayerID) {
@@ -2418,6 +2444,26 @@ class Entity {
                 }
                 sockets.broadcast(usurptText);
             }
+            //Normal FRAG with no AI
+            if (this.settings.frag && (!this.dedByRange || !this.settings.fragile)) {
+                    if (Array.isArray(this.settings.frag)) {
+                        for (let e of this.settings.frag) {
+                            let o = new Entity({ x: this.x, y: this.y, });
+                            o.team = -100;
+                            if (Array.isArray(e)) {
+                                e.forEach(ee => o.define(ee));
+                            } else {
+                                o.define(e);
+                                o.color = this.color;
+                            }
+                        }
+                    } else {
+                        let o = new Entity({ x: this.x, y: this.y, });
+                        o.team = this.team;
+                        o.color = this.color;
+                        o.define(this.settings.frag);
+                    }
+                }
             // Kill it
             return 1;
         } 
@@ -4520,8 +4566,10 @@ var maintainloop = (() => {
         let roidcount = room.roid.length * room.width * room.height / room.xgrid / room.ygrid / 50000 / 1.5;
         let rockcount = room.rock.length * room.width * room.height / room.xgrid / room.ygrid / 250000 / 1.5;
         let count = 0;
+        for (let i=Math.ceil(roidcount * 1.3); i; i--) { count++; placeRoid('roid', Class.bigObstacle); }
         for (let i=Math.ceil(roidcount); i; i--) { count++; placeRoid('roid', Class.obstacle); }
         for (let i=Math.ceil(roidcount * 0.3); i; i--) { count++; placeRoid('roid', Class.babyObstacle); }
+        for (let i=Math.ceil(rockcount * 1.1); i; i--) { count++; placeRoid('rock', Class.bigObstacle); }
         for (let i=Math.ceil(rockcount * 0.8); i; i--) { count++; placeRoid('rock', Class.obstacle); }
         for (let i=Math.ceil(rockcount * 0.5); i; i--) { count++; placeRoid('rock', Class.babyObstacle); }
         util.log('Placing ' + count + ' obstacles!');
@@ -4577,17 +4625,95 @@ var maintainloop = (() => {
             };
         })();
         return census => {
-            if (timer > 6000 && ran.dice(16000 - timer)) {
+            if (timer > 600 && ran.dice(1600 - timer)) {
                 util.log('[SPAWN] Preparing to spawn...');
                 timer = 0;
                 let choice = [];
-                switch (ran.chooseChance(40, 1)) {
+                switch (ran.chooseChance(500, 450, 400, 350, 400, 360, 320, 280, 300, 200, 100, 50, 250, 150, 50, 25, 200, 180, 160, 140, 2)) {
                     case 0: 
-                        choice = [[Class.elite_destroyer], 2, 'a', 'nest'];
+                        choice = [[Class.elite_sprayer, Class.elite_destroyer, Class.elite_gunner], 1, 'a', 'nest'];
+                        sockets.broadcast('A stirring in the distance...');
                         break;
                     case 1: 
-                        choice = [[Class.palisade], 1, 'castle', 'norm']; 
+                        choice = [[Class.elite_sprayer, Class.elite_destroyer, Class.elite_gunner], 2, 'a', 'nest'];
+                        sockets.broadcast('A stirring in the distance...');
+                        break;
+                    case 2: 
+                        choice = [[Class.elite_sprayer, Class.elite_destroyer, Class.elite_gunner], 3, 'a', 'nest'];
+                        sockets.broadcast('A stirring in the distance...');
+                        break;
+                    case 3: 
+                        choice = [[Class.elite_sprayer, Class.elite_destroyer, Class.elite_gunner], 4, 'a', 'nest'];
+                        sockets.broadcast('A stirring in the distance...');
+                        break;
+                    case 4: 
+                        choice = [[ran.choose([Class.palisade, Class.palisade, Class.palisade, Class.palisade, Class.palisade, Class.palisade, Class.palisade, Class.palisade, Class.palisade, Class.hvtgexe]), Class.skimboss], 1, 'castle', 'norm']; 
                         sockets.broadcast('A strange trembling...');
+                        break;
+                    case 5: 
+                        choice = [[ran.choose([Class.palisade, Class.palisade, Class.palisade, Class.palisade, Class.palisade, Class.palisade, Class.palisade, Class.palisade, Class.palisade, Class.hvtgexe]), Class.skimboss], 2, 'castle', 'norm']; 
+                        sockets.broadcast('A strange trembling...');
+                        break;
+                    case 6: 
+                        choice = [[ran.choose([Class.palisade, Class.palisade, Class.palisade, Class.palisade, Class.palisade, Class.palisade, Class.palisade, Class.palisade, Class.palisade, Class.hvtgexe]), Class.skimboss], 3, 'castle', 'norm']; 
+                        sockets.broadcast('A strange trembling...');
+                        break;
+                    case 7: 
+                        choice = [[ran.choose([Class.palisade, Class.palisade, Class.palisade, Class.palisade, Class.palisade, Class.palisade, Class.palisade, Class.palisade, Class.palisade, Class.hvtgexe]), Class.skimboss], 4, 'castle', 'norm']; 
+                        sockets.broadcast('A strange trembling...');
+                        break;
+                    case 8: 
+                        choice = [[Class.dread, Class.octog], 1, 'poly', 'rock']; 
+                        sockets.broadcast('Influx Detected...');
+                        break;
+                    case 9: 
+                        choice = [[Class.dread, Class.octog], 2, 'poly', 'rock']; 
+                        sockets.broadcast('Influx Detected...');
+                        break;
+                    case 10: 
+                        choice = [[Class.dread, Class.octog], 3, 'poly', 'rock']; 
+                        sockets.broadcast('Influx Detected...');
+                        break;
+                    case 11: 
+                        choice = [[Class.dread, Class.octog], 4, 'poly', 'rock']; 
+                        sockets.broadcast('Influx Detected...');
+                        break;
+                    case 12: 
+                        choice = [[ran.choose([Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.custodian, ran.choose([Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.cursedhcdmdefend])])], 1, 'woomy', 'nest']; 
+                        sockets.broadcast('A strange trembling...');
+                        break;
+                    case 13: 
+                        choice = [[ran.choose([Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.custodian, ran.choose([Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.cursedhcdmdefend])])], 2, 'woomy', 'nest']; 
+                        sockets.broadcast('A strange trembling...');
+                        break;
+                    case 14: 
+                        choice = [[ran.choose([Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.custodian, ran.choose([Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.cursedhcdmdefend])])], 3, 'woomy', 'nest']; 
+                        sockets.broadcast('A strange trembling...');
+                        break;
+                    case 15: 
+                        choice = [[ran.choose([Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.custodian, ran.choose([Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.defend, Class.cursedhcdmdefend])])], 4, 'woomy', 'nest']; 
+                        sockets.broadcast('A strange trembling...');
+                        break;
+                    case 16: 
+                        choice = [[Class.okboomer], 1, 'noice', 'rock']; 
+                        sockets.broadcast('Amalgalich 90\'s trash ideas incoming...');
+                        break;
+                    case 17: 
+                        choice = [[Class.okboomer], 2, 'noice', 'rock']; 
+                        sockets.broadcast('Amalgalich 90\'s trash ideas incoming...');
+                        break;
+                    case 18: 
+                        choice = [[Class.okboomer], 3, 'noice', 'rock']; 
+                        sockets.broadcast('Amalgalich 90\'s trash ideas incoming...');
+                        break;
+                    case 19: 
+                        choice = [[Class.okboomer], 4, 'noice', 'rock']; 
+                        sockets.broadcast('Amalgalich 90\'s trash ideas incoming...');
+                        break;
+                    case 20: 
+                        choice = [[ran.choose([Class.hcdm, Class.hcdm, Class.hcdm, Class.hcdm, Class.hcdm, Class.hcdm, Class.hcdm, Class.hcdm, Class.hcdm, Class.cursedhcdm])], 1, 'hcdm', 'nest']; 
+                        sockets.broadcast('The Core of the horrorland has activated...');
+                        sockets.broadcast('Looks like some people have gathered too much Harcadium... the blood moon shows up glowing purple this time...');
                         break;
                 }
                 boss.prepareToSpawn(...choice);
@@ -4600,7 +4726,8 @@ var maintainloop = (() => {
         if (ran.chance(1 -  0.5 * census.crasher / room.maxFood / room.nestFoodAmount)) {
             let spot, i = 30;
             do { spot = room.randomType('nest'); i--; if (!i) return 0; } while (dirtyCheck(spot, 100));
-            let type = (ran.dice(80)) ? ran.choose([Class.sentryGun, Class.sentrySwarm, Class.sentryTrap]) : Class.crasher;
+            let shiny = (ran.dice(100)) ? ran.choose([Class.cursedharcadium]) : Class.cursedharcadiumlite;
+            let type = (ran.dice(100)) ? ran.choose([Class.sentrySwarm, Class.sentryGun, Class.sentryTrap, Class.sentrySnipe, shiny]) : Class.crasher;
             let o = new Entity(spot);
                 o.define(type);
                 o.team = -100;
@@ -4635,27 +4762,130 @@ var maintainloop = (() => {
             // Spawning
             spawnCrasher(census);
             spawnBosses(census);
-            /*/ Bots
+            // Bots
                 if (bots.length < c.BOTS) {
                     let o = new Entity(room.random());
-                    o.color = 17;
-                    o.define(Class.bot);
-                    o.define(Class.basic);
+                    o.define(ran.choose([Class.botT1, Class.botT1, Class.botT1, Class.botT1, Class.botT1, Class.botT1, Class.botT1, Class.botT1, Class.botT1, ran.choose([Class.botT2, Class.botT2, Class.botT2, Class.botT2, Class.botT2, Class.botT2, Class.botT2, Class.botT2, Class.botT2, ran.choose([Class.botT3_A, Class.botT3_B, Class.botT3_C, Class.botT3_D, Class.botT3_E])])]));
+                    o.define(
+                      ran.choose([
+                        Class.basic,
+                        Class.single,
+                        Class.smash,
+                        Class.megasmash,
+                        Class.spike,
+                        Class.autosmash,
+                        Class.twin,
+                        Class.gunner,
+                        Class.machinegunner,
+                        Class.autogunner,
+                        Class.nailgun,
+                        Class.double,
+                        Class.autodouble,
+                        Class.tripletwin,
+                        Class.split,
+                        Class.bent,
+                        Class.bentdouble,
+                        Class.penta,
+                        Class.benthybrid,
+                        Class.triple,
+                        Class.quint,
+                        Class.dual,
+                        Class.sniper,
+                        Class.assassin,
+                        Class.autoass,
+                        Class.ranger,
+                        Class.hunter,
+                        Class.preda,
+                        Class.poach,
+                        Class.rocketeer,
+                        Class.director,
+                        Class.overseer,
+                        Class.overlord,
+                        Class.master,
+                        Class.overtrap,
+                        Class.banshee,
+                        Class.autoover,
+                        Class.overgunner,
+                        Class.cruiser,
+                        Class.autocruiser,
+                        Class.battleship,
+                        Class.carrier,
+                        Class.fortress,
+                        Class.underseer,
+                        Class.autounderseer,
+                        Class.necromancer,
+                        Class.factory,
+                        Class.machine,
+                        Class.automachine,
+                        Class.spray,
+                        Class.mini,
+                        Class.automini,
+                        Class.stream,
+                        Class.hybridmini,
+                        Class.minitrap,
+                        Class.destroy,
+                        Class.autodestroy,
+                        Class.anni,
+                        Class.hiveshooter,
+                        Class.hybrid,
+                        Class.shotgun,
+                        Class.builder,
+                        Class.engineer,
+                        Class.construct,
+                        Class.autobuilder,
+                        Class.boomer,
+                        Class.artillery,
+                        Class.autoarty,
+                        Class.mortar,
+                        Class.skimmer,
+                        Class.spread,
+                        Class.flank,
+                        Class.hexa,
+                        Class.autohexa,
+                        Class.octo,
+                        Class.hexatrap,
+                        Class.tri,
+                        Class.booster,
+                        Class.fighter,
+                        Class.surfer,
+                        Class.bomber,
+                        Class.autotri,
+                        Class.falcon,
+                        Class.auto3,
+                        Class.auto5,
+                        Class.heavy3,
+                        Class.builder3,
+                        Class.sniper3,
+                        Class.machine3,
+                        Class.auto4,
+                        Class.flanktrap,
+                        Class.guntrap,
+                        Class.bushwhack,
+                        Class.twinbuilder,
+                        Class.mothership2,
+                        Class.hurricane,
+                        Class.weirdspike,
+                        Class.quadtrapper,
+                        Class.bentboomer,
+                        Class.ball,
+                        Class.op_anni
+                      ])
+                    );
                     o.name += ran.chooseBotName();
+                    o.team = ran.choose([-1]); // Unused
+                    // o.team = ran.choose([-1, -2, -3, -4]); // FULL
                     o.refreshBodyAttributes();
-                    o.color = 17;
                     bots.push(o);
                 }
                 // Remove dead ones
                 bots = bots.filter(e => { return !e.isDead(); });
                 // Slowly upgrade them
                 bots.forEach(o => {
-                    if (o.skill.level < 45) {
+                    if (o.skill.level < 60) {
                         o.skill.score += 35;
                         o.skill.maintain();
                     }
                 });
-            */
         };
     })();
     // The big food function
@@ -4669,8 +4899,11 @@ var maintainloop = (() => {
                 case 1: a = Class.square; break;
                 case 2: a = Class.triangle; break;
                 case 3: a = Class.pentagon; break;
-                case 4: a = Class.bigPentagon; break;
-                case 5: a = Class.hugePentagon; break;
+                case 4: a = Class.hexagon; break;
+                case 5: a = Class.heptagon; break;
+                case 6: a = Class.octagon; break;
+                case 7: a = Class.nonagon; break;
+                case 8: a = Class.decagon; break;
                 default: throw('bad food level');
             }
             if (a !== {}) {
@@ -4790,9 +5023,12 @@ var maintainloop = (() => {
                 [1]: 0, // Square
                 [2]: 0, // Triangle
                 [3]: 0, // Penta
-                [4]: 0, // Beta
-                [5]: 0, // Alpha
-                [6]: 0,
+                [4]: 0, // Hexa
+                [5]: 0, // Hepta
+                [6]: 0, // Octa
+                [7]: 0, // Nona
+                [8]: 0, // Deca
+                [9]: 0,
                 tank: 0,
                 sum: 0,
             };
@@ -4801,9 +5037,12 @@ var maintainloop = (() => {
                 [1]: 0, // Square
                 [2]: 0, // Triangle
                 [3]: 0, // Penta
-                [4]: 0, // Beta
-                [5]: 0, // Alpha
-                [6]: 0,
+                [4]: 0, // Hexa
+                [5]: 0, // Hepta
+                [6]: 0, // Octa
+                [7]: 0, // Nona
+                [8]: 0, // Deca
+                [9]: 0,
                 sum: 0,
             };
             // Do the censusNest
